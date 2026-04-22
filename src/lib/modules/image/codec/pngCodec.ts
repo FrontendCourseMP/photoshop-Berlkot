@@ -7,7 +7,6 @@ export default class PNGCodec extends BaseNativeCodec implements AbstractCodec {
 	}
 
   async decode(file: File): Promise<DecodedData> {
-    // how canvas will return 1-bit png?
 		const imageData = await this.extractPixels(file);
 		// imageDatas bit depth is unknown by the nature of canvas
 		// thus reading manually

@@ -16,8 +16,8 @@ export default class BaseNativeCodec {
 
 		ctx.drawImage(bitmap, 0, 0);
 		return ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-  }
-	
+	}
+
 	// canvas wont allow us to save any other bit deth other than 8 with alpha
 	// expect file size to be much larger than expected
 	// and png will fall back to 8-bit RGBA ughhhhh
