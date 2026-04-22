@@ -228,6 +228,7 @@
 		<Dropdown
 			triggeredBy="#file-menu"
 			class="w-48 rounded border border-gray-700 bg-gray-800 shadow-xl"
+			simple
 		>
 			<DropdownItem class="text-gray-300 hover:bg-gray-700" onclick={() => fileInput?.click()}
 				>Открыть...</DropdownItem
@@ -246,15 +247,18 @@
 					triggeredBy="#save-as-menu"
 					placement="right-start"
 					class="w-32 border border-gray-700 bg-gray-800"
+					simple
 				>
 					<DropdownItem
 						class="text-gray-300 hover:bg-primary-600 hover:text-white"
 						onclick={() => openExportDialog('png')}>PNG</DropdownItem
 					>
+					<DropdownDivider />
 					<DropdownItem
 						class="text-gray-300 hover:bg-primary-600 hover:text-white"
 						onclick={() => openExportDialog('jpg')}>JPG</DropdownItem
 					>
+					<DropdownDivider />
 					<DropdownItem
 						class="text-gray-300 hover:bg-primary-600 hover:text-white"
 						onclick={() => openExportDialog('gb7')}>GB7</DropdownItem
