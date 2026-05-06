@@ -21,13 +21,15 @@
 	import { ImageDocument, type RGBA, type LAB } from '$lib/modules/image';
 	import { CanvasManager, type Channel } from '$lib/modules/canvas';
 	import { Codec } from '$lib/modules/image/codec';
-
+	import LevelsDialog from '$lib/components/LevelsDialog.svelte';
 
 	let document = $state<ImageDocument | null>(null);
 	let docVersion = $state(0);
 	let canvasManager = $state<CanvasManager | null>(null);
 	let mainCanvas = $state<HTMLCanvasElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
+
+	let levelsDialogOpen = $state(false);
 
 	type Tool = 'mouse' | 'pipette';
 	let activeTool = $state<Tool>('mouse');
@@ -295,6 +297,23 @@
 					>
 				</Dropdown>
 			{/if}
+		</Dropdown>
+
+		<button
+			id="image-menu"
+			class="rounded px-3 py-1 text-gray-300 transition-colors hover:bg-gray-700"
+			>Изображение</button
+		>
+		<Dropdown
+			triggeredBy="#image-menu"
+			class="w-48 rounded border border-gray-700 bg-gray-800 shadow-xl"
+			simple
+		>
+			<DropdownItem
+				class="text-gray-300 hover:bg-gray-700"
+				disabled={!document}
+				onclick={() => (levelsDialogOpen = true)}>Уровни</DropdownItem
+			>
 		</Dropdown>
 	</header>
 
@@ -617,4 +636,27 @@
 			</div>
 		</form>
 	</Modal>
+
+	<LevelsDialog
+		bind:open={levelsDialogOpen}
+		{document}
+		{canvasManager}
+		onClose={() => {}}
+		onApply={() => {
+			if (document) {
+				docVersion++;
+			}
+		}}
+	/>
+
+	{#if levelsDialogOpen}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div
+			class="fixed inset-0 z-[90] bg-black/5"
+			onclick={() => {
+				/* Block clicks on background */
+			}}
+		></div>
+	{/if}
 </div>

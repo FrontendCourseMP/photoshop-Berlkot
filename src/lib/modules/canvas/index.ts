@@ -17,6 +17,13 @@ export class CanvasManager {
 		gray: true
 	};
 
+	private filterLUTs: {
+		r: Uint8ClampedArray;
+		g: Uint8ClampedArray;
+		b: Uint8ClampedArray;
+		a: Uint8ClampedArray;
+	} | null = null;
+
 	constructor(canvas: HTMLCanvasElement) {
 		this.canvas = canvas;
 		const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -76,6 +83,18 @@ export class CanvasManager {
 		return preview;
 	}
 
+	public setFilters(
+		luts: {
+			r: Uint8ClampedArray;
+			g: Uint8ClampedArray;
+			b: Uint8ClampedArray;
+			a: Uint8ClampedArray;
+		} | null
+	): void {
+		this.filterLUTs = luts;
+		this.updateRender();
+	}
+
 	public updateRender(): void {
 		if (!this.document || !this.renderData) return;
 
@@ -94,7 +113,12 @@ export class CanvasManager {
 			let b = originalData[i + 2];
 			let a = originalData[i + 3];
 
-
+			if (this.filterLUTs) {
+				r = this.filterLUTs.r[r];
+				g = this.filterLUTs.g[g];
+				b = this.filterLUTs.b[b];
+				a = this.filterLUTs.a[a];
+			}
 
 			if (isOnlyAlpha) {
 				renderData[i] = a;

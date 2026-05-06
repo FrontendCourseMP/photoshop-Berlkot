@@ -14,7 +14,7 @@ export interface LAB {
 }
 
 export class ImageDocument {
-	public readonly meta: ImageMeta;
+	public meta: ImageMeta;
 	private imageData: ImageData;
 
 	private constructor(imageData: ImageData, meta: ImageMeta) {
@@ -89,6 +89,37 @@ export class ImageDocument {
 
 		return labData;
 	}
+	public applyFilters(luts: {
+		r: Uint8ClampedArray;
+		g: Uint8ClampedArray;
+		b: Uint8ClampedArray;
+		a: Uint8ClampedArray;
+	}): void {
+		// Detect if we should promote to color mode BEFORE applying
+		if (this.meta.channels.startsWith('Grayscale')) {
+			let isNewFilterGray = true;
+			for (let i = 0; i < 256; i++) {
+				if (luts.r[i] !== luts.g[i] || luts.r[i] !== luts.b[i]) {
+					isNewFilterGray = false;
+					break;
+				}
+			}
+
+			if (!isNewFilterGray) {
+				const hasAlpha = this.meta.channels.includes('Alpha');
+				this.meta.channels = hasAlpha ? 'RGBA' : 'RGB';
+			}
+		}
+
+		const data = this.imageData.data;
+		for (let i = 0; i < data.length; i += 4) {
+			data[i] = luts.r[data[i]];
+			data[i + 1] = luts.g[data[i + 1]];
+			data[i + 2] = luts.b[data[i + 2]];
+			data[i + 3] = luts.a[data[i + 3]];
+		}
+	}
+
 	private cordToIndex(x: number, y: number): number {
 		return (Math.floor(y) * this.meta.width + Math.floor(x)) * 4;
 	}
