@@ -6,7 +6,7 @@ export default class PNGCodec extends BaseNativeCodec implements AbstractCodec {
 		super('image/png');
 	}
 
-  async decode(file: File): Promise<DecodedData> {
+	async decode(file: File): Promise<DecodedData> {
 		const imageData = await this.extractPixels(file);
 		// imageDatas bit depth is unknown by the nature of canvas
 		// thus reading manually
@@ -19,32 +19,33 @@ export default class PNGCodec extends BaseNativeCodec implements AbstractCodec {
 		const bitDepth = dataView.getUint8(24);
 		const colorType = dataView.getUint8(25);
 
-		const colorDepthString = this.getPngColorDepthInfo(bitDepth, colorType);
+		const channels = this.getPngChannels(colorType);
 
 		return {
 			imageData,
 			meta: {
 				width: imageData.width,
 				height: imageData.height,
-				colorDepth: colorDepthString
+				format: 'PNG',
+				channels,
+				colorDepth: `${bitDepth}-bit`
 			}
 		};
 	}
-	private getPngColorDepthInfo(bitDepth: number, colorType: number): string {
-		// colorType: 0 (Grayscale), 2 (RGB), 3 (Palette), 4 (Grayscale+Alpha), 6 (RGBA)
+
+	private getPngChannels(colorType: number): 'Grayscale' | 'Grayscale + Alpha' | 'RGB' | 'RGBA' {
 		switch (colorType) {
 			case 0:
-				return `${bitDepth}-bit Grayscale`;
+			case 3: 
+				return 'Grayscale';
 			case 2:
-				return `${bitDepth * 3}-bit RGB`;
-			case 3:
-				return `${bitDepth}-bit Indexed`;
+				return 'RGB';
 			case 4:
-				return `${bitDepth * 2}-bit Grayscale + Alpha`;
+				return 'Grayscale + Alpha';
 			case 6:
-				return `${bitDepth * 4}-bit RGBA`;
+				return 'RGBA';
 			default:
-				return `Unknown PNG Depth`;
+				return 'RGB';
 		}
 	}
 }

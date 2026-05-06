@@ -11,5 +11,7 @@ export type DecodedData = {
 export type ImageMeta = {
 	width: number;
 	height: number;
+	format: string;
+	channels: 'Grayscale' | 'Grayscale + Alpha' | 'RGB' | 'RGBA';
 	colorDepth: string;
 };

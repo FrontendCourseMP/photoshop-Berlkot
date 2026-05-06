@@ -1,6 +1,6 @@
 import { ImageDocument } from '../image';
 
-export type Channel = 'r' | 'g' | 'b' | 'a';
+export type Channel = 'r' | 'g' | 'b' | 'a' | 'gray';
 
 export class CanvasManager {
 	private canvas: HTMLCanvasElement;
@@ -13,7 +13,8 @@ export class CanvasManager {
 		r: true,
 		g: true,
 		b: true,
-		a: true
+		a: true,
+		gray: true
 	};
 
 	constructor(canvas: HTMLCanvasElement) {
@@ -30,7 +31,7 @@ export class CanvasManager {
 
 		this.renderData = new ImageData(doc.meta.width, doc.meta.height);
 
-		this.activeChannels = { r: true, g: true, b: true, a: true };
+		this.activeChannels = { r: true, g: true, b: true, a: true, gray: true };
 		this.updateRender();
 	}
 
@@ -58,6 +59,12 @@ export class CanvasManager {
 			else if (channel === 'g') val = originalData[i + 1];
 			else if (channel === 'b') val = originalData[i + 2];
 			else if (channel === 'a') val = originalData[i + 3];
+			else if (channel === 'gray') {
+				// Rec. 601
+				val = Math.round(
+					0.299 * originalData[i] + 0.587 * originalData[i + 1] + 0.114 * originalData[i + 2]
+				);
+			}
 
 			// display as grayscale
 			dest[i] = val;
@@ -82,20 +89,26 @@ export class CanvasManager {
 			!this.activeChannels.b;
 
 		for (let i = 0; i < originalData.length; i += 4) {
+			let r = originalData[i];
+			let g = originalData[i + 1];
+			let b = originalData[i + 2];
+			let a = originalData[i + 3];
+
+
+
 			if (isOnlyAlpha) {
-				const alpha = originalData[i + 3];
-				renderData[i] = alpha;
-				renderData[i + 1] = alpha;
-				renderData[i + 2] = alpha;
+				renderData[i] = a;
+				renderData[i + 1] = a;
+				renderData[i + 2] = a;
 				renderData[i + 3] = 255;
 				continue;
 			}
 
-			renderData[i] = this.activeChannels.r ? originalData[i] : 0;
-			renderData[i + 1] = this.activeChannels.g ? originalData[i + 1] : 0;
-			renderData[i + 2] = this.activeChannels.b ? originalData[i + 2] : 0;
+			renderData[i] = this.activeChannels.r ? r : 0;
+			renderData[i + 1] = this.activeChannels.g ? g : 0;
+			renderData[i + 2] = this.activeChannels.b ? b : 0;
 
-			renderData[i + 3] = this.activeChannels.a ? originalData[i + 3] : 255;
+			renderData[i + 3] = this.activeChannels.a ? a : 255;
 		}
 
 		this.ctx.putImageData(this.renderData, 0, 0);

@@ -13,7 +13,9 @@ export default class JPEGCodec extends BaseNativeCodec implements AbstractCodec 
 			meta: {
 				width: imageData.width,
 				height: imageData.height,
-				colorDepth: '24-bit JPEG' // it can't be encoded as any other bit depth?
+				format: 'JPEG',
+				channels: 'RGB',
+				colorDepth: '8-bit'
 			}
 		};
 	}

@@ -14,7 +14,7 @@ beforeAll(() => {
 				this.height = height;
 				this.data = new Uint8ClampedArray(width * height * 4);
 			}
-		} as any;
+		} as unknown as typeof ImageData;
 	}
 });
 

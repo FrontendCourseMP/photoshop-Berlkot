@@ -24,6 +24,7 @@
 
 
 	let document = $state<ImageDocument | null>(null);
+	let docVersion = $state(0);
 	let canvasManager = $state<CanvasManager | null>(null);
 	let mainCanvas = $state<HTMLCanvasElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
@@ -44,20 +45,41 @@
 		r: true,
 		g: true,
 		b: true,
-		a: true
+		a: true,
+		gray: true
 	});
 
-	let displayedDepth = $derived.by(() => {
-		const count = [activeChannels.r, activeChannels.g, activeChannels.b, activeChannels.a].filter(
-			Boolean
-		).length;
-		if (count === 4) return '32-bit RGBA';
-		if (count === 3) return '24-bit RGB';
-		if (count === 2) return '16-bit (2 канала)';
-		if (count === 1) return '8-bit (1 канал)';
-		return '0-bit (Пусто)';
+	let docInfo = $derived.by(() => {
+		// Link to docVersion to force re-calculation
+		if (docVersion < 0) return { channels: [] as Channel[], depth: '' };
+		if (!document) return { channels: [] as Channel[], depth: '0-bit (Пусто)' };
+
+		const meta = document.meta;
+		let channels: Channel[] = [];
+		if (meta.channels === 'Grayscale') channels = ['gray'];
+		else if (meta.channels === 'Grayscale + Alpha') channels = ['gray', 'a'];
+		else if (meta.channels === 'RGB') channels = ['r', 'g', 'b'];
+		else if (meta.channels === 'RGBA') channels = ['r', 'g', 'b', 'a'];
+
+		const active = channels.filter((ch) => activeChannels[ch]);
+		const count = active.length;
+
+		let depth;
+		if (meta.channels.includes('Grayscale')) {
+			if (count === 2) depth = '16-bit Grayscale + Alpha';
+			else if (count === 1) depth = active[0] === 'gray' ? '8-bit Grayscale' : '8-bit Alpha';
+			else depth = '0-bit (Пусто)';
+		} else {
+			if (count === 4) depth = '32-bit RGBA';
+			else if (count === 3) depth = '24-bit RGB';
+			else if (count === 2) depth = `16-bit (${count} канала)`;
+			else if (count === 1) depth = `8-bit (${count} канал)`;
+			else depth = '0-bit (Пусто)';
+		}
+
+		return { channels, depth };
 	});
-	
+
 	let dragCounter = $state(0);
 	let isDraggingOver = $derived(dragCounter > 0);
 
@@ -67,7 +89,7 @@
 			document = newDoc;
 			exportFileName = file.name.split('.').slice(0, -1).join('.') || 'image';
 
-			activeChannels = { r: true, g: true, b: true, a: true };
+			activeChannels = { r: true, g: true, b: true, a: true, gray: true };
 			pipetteData = null;
 
 			// kaboom?
@@ -77,12 +99,12 @@
 			await tick();
 
 			if (mainCanvas) {
-			    // force redraw
+				// force redraw
 				canvasManager = new CanvasManager(mainCanvas);
 				canvasManager.loadDocument(document);
 			}
-		} catch (error: any) {
-			alert('Ошибка загрузки файла: ' + error.message);
+		} catch (error) {
+			alert('Ошибка загрузки файла: ' + (error instanceof Error ? error.message : String(error)));
 		}
 	}
 
@@ -112,6 +134,7 @@
 
 	const drawPreview = (node: HTMLCanvasElement, channel: Channel) => {
 		$effect(() => {
+			if (docVersion < 0) return;
 			if (canvasManager && document) {
 				// reactive bait
 				const meta = document.meta;
@@ -128,7 +151,14 @@
 	function toggleChannel(channel: Channel) {
 		if (!canvasManager) return;
 		activeChannels[channel] = !activeChannels[channel];
-		canvasManager.toggleChannel(channel, activeChannels[channel]);
+
+		if (channel === 'gray') {
+			canvasManager.toggleChannel('r', activeChannels.gray);
+			canvasManager.toggleChannel('g', activeChannels.gray);
+			canvasManager.toggleChannel('b', activeChannels.gray);
+		} else {
+			canvasManager.toggleChannel(channel, activeChannels[channel]);
+		}
 	}
 
 	function onCanvasClick(e: MouseEvent) {
@@ -168,8 +198,8 @@
 			a.click();
 			URL.revokeObjectURL(url);
 			exportModalOpen = false;
-		} catch (err: any) {
-			alert('Ошибка экспорта: ' + err.message);
+		} catch (err) {
+			alert('Ошибка экспорта: ' + (err instanceof Error ? err.message : String(err)));
 		}
 	}
 </script>
@@ -355,11 +385,16 @@
 								>
 							</div>
 							<div class="flex justify-between border-b border-gray-800/50 pb-1">
-								<span class="text-gray-500">Оригинал</span><span>{document.meta.colorDepth}</span>
+								<span class="text-gray-500">Формат</span><span
+									>{document.meta.format} ({document.meta.colorDepth})</span
+								>
+							</div>
+							<div class="flex justify-between border-b border-gray-800/50 pb-1">
+								<span class="text-gray-500">Каналы</span><span>{document.meta.channels}</span>
 							</div>
 							<div class="flex justify-between pb-1">
 								<span class="text-gray-500">Холст</span><span class="text-primary-400"
-									>{displayedDepth}</span
+									>{docInfo.depth}</span
 								>
 							</div>
 						</div>
@@ -368,28 +403,31 @@
 				<div class="flex-1 p-4">
 					<div class="mb-3 text-xs font-bold text-gray-400 uppercase">Каналы</div>
 					<div class="space-y-2">
-						{#each ['r', 'g', 'b', 'a'] as ch (ch)}
+						{#each docInfo.channels as ch (ch)}
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
 								class="flex cursor-pointer items-center gap-3 rounded border p-2 transition-all {activeChannels[
-									ch as Channel
+									ch
 								]
 									? 'border-gray-600 bg-gray-800 shadow-sm'
 									: 'border-transparent bg-transparent opacity-40 hover:bg-gray-800/50 hover:opacity-100'}"
-								onclick={() => toggleChannel(ch as Channel)}
+								onclick={() => toggleChannel(ch)}
 							>
 								<button class="shrink-0 text-gray-400 hover:text-white">
-									{#if activeChannels[ch as Channel]}<EyeSolid
+									{#if activeChannels[ch]}<EyeSolid class="h-4 w-4" />{:else}<EyeSlashSolid
 											class="h-4 w-4"
-										/>{:else}<EyeSlashSolid class="h-4 w-4" />{/if}
+										/>{/if}
 								</button>
-								<div class="w-4 text-center font-mono font-bold text-gray-200 uppercase">{ch}</div>
+								<div
+									class="w-10 text-center font-mono text-[10px] font-bold text-gray-200 uppercase"
+								>
+									{ch === 'gray' ? 'Gray' : ch}
+								</div>
 								<div
 									class="flex h-10 flex-1 items-center justify-center overflow-hidden rounded border border-gray-900 bg-black shadow-inner"
 								>
-									<canvas use:drawPreview={ch as Channel} class="h-full w-full object-contain"
-									></canvas>
+									<canvas use:drawPreview={ch} class="h-full w-full object-contain"></canvas>
 								</div>
 							</div>
 						{/each}
