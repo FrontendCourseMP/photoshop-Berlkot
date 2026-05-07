@@ -170,12 +170,13 @@
 	let activeMarker = $state<'black' | 'white' | 'gamma' | null>(null);
 
 	function getGammaPos(gamma: number): number {
-		return Math.pow(0.5, gamma);
+		return 0.5 - 0.5 * Math.log10(gamma);
 	}
 
 	function getGammaFromPos(pos: number): number {
-		const p = Math.max(0.01, Math.min(0.99, pos));
-		return Math.log(p) / Math.log(0.5);
+		const x = Math.max(0, Math.min(1, pos));
+		const val = Math.pow(10, 1 - 2 * x);
+		return Math.max(0.1, Math.min(9.9, val));
 	}
 
 	const chState = $derived(selectedChannel as keyof LevelsProcessingState);
@@ -309,16 +310,19 @@
 					</div>
 				</div>
 
-				<div class="relative mt-2 h-5 font-mono text-[11px] font-bold text-gray-400">
-					<span class="absolute -translate-x-1/2" style="left: {bPos}%"
-						>{settings[chState].black}</span
-					>
-					<span class="absolute -translate-x-1/2" style="left: {gPos}%"
-						>{settings[chState].gamma.toFixed(2)}</span
-					>
-					<span class="absolute -translate-x-1/2" style="left: {wPos}%"
-						>{settings[chState].white}</span
-					>
+				<div class="mt-2 flex h-5 items-center justify-between font-mono text-[11px] font-bold text-gray-500">
+					<div class="flex items-center gap-1.5">
+						<span class="text-[9px] uppercase tracking-tighter text-gray-600">Black</span>
+						<span class="text-gray-400">{settings[chState].black}</span>
+					</div>
+					<div class="flex items-center gap-1.5">
+						<span class="text-[9px] uppercase tracking-tighter text-gray-600">Gamma</span>
+						<span class="text-gray-400">{settings[chState].gamma.toFixed(2)}</span>
+					</div>
+					<div class="flex items-center gap-1.5">
+						<span class="text-[9px] uppercase tracking-tighter text-gray-600">White</span>
+						<span class="text-gray-400">{settings[chState].white}</span>
+					</div>
 				</div>
 			</div>
 
