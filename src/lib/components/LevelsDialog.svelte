@@ -31,6 +31,8 @@
 	let selectedChannel = $state('master');
 	let previewEnabled = $state(true);
 	let isLogarithmic = $state(false);
+	let isIndependentChannels = $state(false);
+	let userManuallySetIndependent = $state(false);
 
 	let settings = $state<LevelsProcessingState>(createDefaultLevelsState());
 
@@ -86,41 +88,63 @@
 		ctx.clearRect(0, 0, width, height);
 
 		let max = 0;
-		if (selectedChannel === 'master') {
-			// Find overall max across R, G, B for scaling
-			for (let i = 0; i < 256; i++) {
-				max = Math.max(max, histograms.r[i], histograms.g[i], histograms.b[i]);
-			}
-		} else {
-			const h = histograms[selectedChannel];
+
+		if (!isIndependentChannels) {
+			const h = histograms.master;
 			for (let i = 0; i < 256; i++) {
 				max = Math.max(max, h[i]);
 			}
-		}
-
-		if (max === 0) return;
-		const scale = !isLogarithmic ? max : Math.log(max + 1);
-
-		if (selectedChannel === 'master') {
-			ctx.globalCompositeOperation = 'screen';
-			drawChannel(ctx, histograms.r, '#ff0000', width, height, scale);
-			drawChannel(ctx, histograms.g, '#00ff00', width, height, scale);
-			drawChannel(ctx, histograms.b, '#0000ff', width, height, scale);
-			ctx.globalCompositeOperation = 'source-over';
+			if (max === 0) return;
+			const scale = !isLogarithmic ? max : Math.log(max + 1);
+			drawChannel(ctx, h, '#6b7280', width, height, scale);
 		} else {
-			const color =
-				selectedChannel === 'r'
-					? '#ef4444'
-					: selectedChannel === 'g'
-						? '#22c55e'
-						: selectedChannel === 'b'
-							? '#3b82f6'
-							: selectedChannel === 'a'
-								? '#94a3b8'
-								: '#ffffff';
-			drawChannel(ctx, histograms[selectedChannel], color, width, height, scale);
+
+			if (selectedChannel === 'master') {
+				// Find overall max across R, G, B for scaling
+				for (let i = 0; i < 256; i++) {
+					max = Math.max(max, histograms.r[i], histograms.g[i], histograms.b[i]);
+				}
+			} else {
+				const h = histograms[selectedChannel];
+				for (let i = 0; i < 256; i++) {
+					max = Math.max(max, h[i]);
+				}
+			}
+
+			if (max === 0) return;
+			const scale = !isLogarithmic ? max : Math.log(max + 1);
+
+			if (selectedChannel === 'master') {
+				ctx.globalCompositeOperation = 'screen';
+				drawChannel(ctx, histograms.r, '#ff0000', width, height, scale);
+				drawChannel(ctx, histograms.g, '#00ff00', width, height, scale);
+				drawChannel(ctx, histograms.b, '#0000ff', width, height, scale);
+				ctx.globalCompositeOperation = 'source-over';
+			} else {
+				const color =
+					selectedChannel === 'r'
+						? '#ef4444'
+						: selectedChannel === 'g'
+							? '#22c55e'
+							: selectedChannel === 'b'
+								? '#3b82f6'
+								: selectedChannel === 'a'
+									? '#94a3b8'
+									: '#ffffff';
+				drawChannel(ctx, histograms[selectedChannel], color, width, height, scale);
+			}
 		}
 	}
+
+	$effect(() => {
+		if (!userManuallySetIndependent) {
+			if (selectedChannel !== 'master') {
+				isIndependentChannels = true;
+			} else {
+				isIndependentChannels = false;
+			}
+		}
+	});
 
 	$effect(() => {
 		if (open && histograms[selectedChannel]) {
@@ -310,17 +334,19 @@
 					</div>
 				</div>
 
-				<div class="mt-2 flex h-5 items-center justify-between font-mono text-[11px] font-bold text-gray-500">
+				<div
+					class="mt-2 flex h-5 items-center justify-between font-mono text-[11px] font-bold text-gray-500"
+				>
 					<div class="flex items-center gap-1.5">
-						<span class="text-[9px] uppercase tracking-tighter text-gray-600">Black</span>
+						<span class="text-[9px] tracking-tighter text-gray-600 uppercase">Black</span>
 						<span class="text-gray-400">{settings[chState].black}</span>
 					</div>
 					<div class="flex items-center gap-1.5">
-						<span class="text-[9px] uppercase tracking-tighter text-gray-600">Gamma</span>
+						<span class="text-[9px] tracking-tighter text-gray-600 uppercase">Gamma</span>
 						<span class="text-gray-400">{settings[chState].gamma.toFixed(2)}</span>
 					</div>
 					<div class="flex items-center gap-1.5">
-						<span class="text-[9px] uppercase tracking-tighter text-gray-600">White</span>
+						<span class="text-[9px] tracking-tighter text-gray-600 uppercase">White</span>
 						<span class="text-gray-400">{settings[chState].white}</span>
 					</div>
 				</div>
@@ -329,6 +355,11 @@
 			<div class="flex flex-col items-start gap-2 pt-2">
 				<Checkbox bind:checked={previewEnabled} class="text-sm">Предпросмотр</Checkbox>
 				<Checkbox bind:checked={isLogarithmic} class="text-sm">Логарифмическая шкала</Checkbox>
+				<Checkbox
+					bind:checked={isIndependentChannels}
+					onchange={() => (userManuallySetIndependent = true)}
+					class="text-sm">Независимые каналы</Checkbox
+				>
 			</div>
 
 			<div class="flex justify-between border-t border-gray-800 pt-4">
