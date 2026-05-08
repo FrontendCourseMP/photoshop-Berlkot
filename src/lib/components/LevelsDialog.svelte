@@ -20,13 +20,18 @@
 
 	let { open = $bindable(), document, canvasManager, onClose, onApply }: Props = $props();
 
-	let channels = [
-		{ value: 'master', name: 'Master (RGB)' },
-		{ value: 'r', name: 'Red' },
-		{ value: 'g', name: 'Green' },
-		{ value: 'b', name: 'Blue' },
-		{ value: 'a', name: 'Alpha' }
-	];
+	let availableChannelsList = $derived.by(() => {
+		const base = [
+			{ value: 'master', name: 'Master (RGB)' },
+			{ value: 'r', name: 'Red' },
+			{ value: 'g', name: 'Green' },
+			{ value: 'b', name: 'Blue' }
+		];
+		if (document?.meta.channels.includes('Alpha')) {
+			base.push({ value: 'a', name: 'Alpha' });
+		}
+		return base;
+	});
 
 	let selectedChannel = $state('master');
 	let previewEnabled = $state(true);
@@ -283,7 +288,7 @@
 			<div class="flex items-center gap-4">
 				<Label class="w-24 text-xs font-bold text-gray-500 uppercase">Канал:</Label>
 				<Select
-					items={channels}
+					items={availableChannelsList}
 					bind:value={selectedChannel}
 					class="border-gray-700 bg-gray-800 text-sm text-white"
 				/>
