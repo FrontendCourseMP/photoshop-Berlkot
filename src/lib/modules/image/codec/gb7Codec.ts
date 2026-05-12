@@ -68,7 +68,7 @@ export class GB7Codec implements AbstractCodec {
 				height,
 				format: 'GB7',
 				channels: hasMask ? 'Grayscale + Alpha' : 'Grayscale',
-				colorDepth: '7-bit'
+				colorDepth: hasMask ? '7-bit + Mask' : '7-bit'
 			}
 		};
 	}

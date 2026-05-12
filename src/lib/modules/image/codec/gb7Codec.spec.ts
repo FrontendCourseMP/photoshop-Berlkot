@@ -32,7 +32,7 @@ describe('GB7Codec', () => {
 		const file = loadFixture('vertical-kapibara.gb7');
 		const result = await codec.decode(file);
 
-		expect(result.meta.colorDepth).toBe('7-bit GB7');
+		expect(result.meta.colorDepth).toBe('7-bit');
 		expect(result.meta.width).toBeGreaterThan(0);
 		expect(result.meta.height).toBeGreaterThan(result.meta.width);
 
@@ -51,7 +51,7 @@ describe('GB7Codec', () => {
 		const file = loadFixture('kapibara-mask.gb7');
 		const result = await codec.decode(file);
 
-		expect(result.meta.colorDepth).toBe('7-bit GB7 (+ Mask)');
+		expect(result.meta.colorDepth).toBe('7-bit + Mask');
 
 		const pixels = result.imageData.data;
 		let hasTransparentPixel = false;
