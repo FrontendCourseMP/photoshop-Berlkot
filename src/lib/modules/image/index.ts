@@ -1,5 +1,6 @@
 import { resolveCodec } from './codec';
 import type { AbstractCodec, ImageMeta } from './codec/types';
+import { ImageTransformer, type InterpolationMethod } from './transform';
 
 export interface RGBA {
 	r: number;
@@ -26,6 +27,17 @@ export class ImageDocument {
 		const codec = await resolveCodec(file);
 		const { imageData, meta } = await codec.decode(file);
 		return new ImageDocument(imageData, meta);
+	}
+
+	public resize(width: number, height: number, method: InterpolationMethod): void {
+		const newImageData = ImageTransformer.resize(this.imageData, {
+			width,
+			height,
+			method
+		});
+		this.imageData = newImageData;
+		this.meta.width = width;
+		this.meta.height = height;
 	}
 
 	public async export(codec: AbstractCodec): Promise<Blob> {

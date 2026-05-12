@@ -7,7 +7,8 @@
 		Dropdown,
 		DropdownItem,
 		DropdownDivider,
-		Label
+		Label,
+		Select
 	} from 'flowbite-svelte';
 	import {
 		EyeSolid,
@@ -20,8 +21,10 @@
 
 	import { ImageDocument, type RGBA, type LAB } from '$lib/modules/image';
 	import { CanvasManager, type Channel } from '$lib/modules/canvas';
+	import { type InterpolationMethod } from '$lib/modules/image/transform';
 	import { Codec } from '$lib/modules/image/codec';
 	import LevelsDialog from '$lib/components/LevelsDialog.svelte';
+	import ScaleDialog from '$lib/components/ScaleDialog.svelte';
 
 	let document = $state<ImageDocument | null>(null);
 	let docVersion = $state(0);
@@ -30,6 +33,7 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 
 	let levelsDialogOpen = $state(false);
+	let scaleDialogOpen = $state(false);
 
 	type Tool = 'mouse' | 'pipette';
 	let activeTool = $state<Tool>('mouse');
@@ -42,6 +46,9 @@
 	let exportModalOpen = $state(false);
 	let exportFormat = $state<'png' | 'jpg' | 'gb7'>('png');
 	let exportFileName = $state('image');
+
+	let currentZoom = $state(1);
+	let zoomInterpolation = $state<InterpolationMethod>('bilinear');
 
 	let activeChannels = $state<Record<Channel, boolean>>({
 		r: true,
@@ -103,6 +110,23 @@
 			if (mainCanvas) {
 				// force redraw
 				canvasManager = new CanvasManager(mainCanvas);
+				
+				const workspace = window.document.getElementById('workspace-bg');
+				if (workspace) {
+					const padding = 100; // 50px each side
+					const availableWidth = workspace.clientWidth - padding;
+					const availableHeight = workspace.clientHeight - padding;
+					
+					const zoomX = availableWidth / document.meta.width;
+					const zoomY = availableHeight / document.meta.height;
+					
+					let zoom = Math.min(zoomX, zoomY);
+					zoom = Math.max(0.12, Math.min(3.0, zoom));
+					currentZoom = zoom;
+					canvasManager.setZoom(currentZoom);
+					canvasManager.setInterpolationMethod(zoomInterpolation);
+				}
+				
 				canvasManager.loadDocument(document);
 			}
 		} catch (error) {
@@ -160,6 +184,64 @@
 			canvasManager.toggleChannel('b', activeChannels.gray);
 		} else {
 			canvasManager.toggleChannel(channel, activeChannels[channel]);
+		}
+	}
+
+	function handleZoomChange(newZoom: number) {
+		currentZoom = Math.max(0.12, Math.min(3.0, newZoom));
+		if (canvasManager) {
+			canvasManager.setZoom(currentZoom);
+		}
+	}
+
+	function handleWheel(e: WheelEvent) {
+		if (e.ctrlKey) {
+			e.preventDefault();
+			const delta = e.deltaY > 0 ? -0.1 : 0.1;
+			handleZoomChange(currentZoom + delta);
+		}
+	}
+
+	function handleZoomFit() {
+		const workspace = window.document.getElementById('workspace-bg');
+		if (workspace && document) {
+			const padding = 40; // Small padding for "Fit All"
+			const availableWidth = workspace.clientWidth - padding;
+			const availableHeight = workspace.clientHeight - padding;
+			const zoomX = availableWidth / document.meta.width;
+			const zoomY = availableHeight / document.meta.height;
+			handleZoomChange(Math.min(zoomX, zoomY));
+		}
+	}
+
+	function handleZoomFitWidth() {
+		const workspace = window.document.getElementById('workspace-bg');
+		if (workspace && document) {
+			handleZoomChange(workspace.clientWidth / document.meta.width);
+		}
+	}
+
+	function handleZoomFitHeight() {
+		const workspace = window.document.getElementById('workspace-bg');
+		if (workspace && document) {
+			handleZoomChange(workspace.clientHeight / document.meta.height);
+		}
+	}
+
+	function handleZoomInterpolationChange(method: InterpolationMethod) {
+		zoomInterpolation = method;
+		if (canvasManager) {
+			canvasManager.setInterpolationMethod(zoomInterpolation);
+		}
+	}
+
+	function onScaleApply(w: number, h: number, method: InterpolationMethod) {
+		if (document) {
+			document.resize(w, h, method);
+			docVersion++;
+			if (canvasManager) {
+				canvasManager.loadDocument(document);
+			}
 		}
 	}
 
@@ -314,6 +396,11 @@
 				disabled={!document}
 				onclick={() => (levelsDialogOpen = true)}>Уровни</DropdownItem
 			>
+			<DropdownItem
+				class="text-gray-300 hover:bg-gray-700"
+				disabled={!document}
+				onclick={() => (scaleDialogOpen = true)}>Размер изображения</DropdownItem
+			>
 		</Dropdown>
 	</header>
 
@@ -411,10 +498,55 @@
 							<div class="flex justify-between border-b border-gray-800/50 pb-1">
 								<span class="text-gray-500">Каналы</span><span>{document.meta.channels}</span>
 							</div>
-							<div class="flex justify-between pb-1">
+							<div class="flex justify-between border-b border-gray-800/50 pb-1">
 								<span class="text-gray-500">Холст</span><span class="text-primary-400"
 									>{docInfo.depth}</span
 								>
+							</div>
+							<div class="pt-4">
+								<div class="mb-2 flex items-center justify-between">
+									<span class="text-gray-500">Масштаб просмотра</span>
+									<button id="zoom-dropdown-trigger" class="font-mono text-xs text-white hover:text-primary-500 transition-colors cursor-pointer">
+										{Math.round(currentZoom * 100)}%
+									</button>
+									<Dropdown triggeredBy="#zoom-dropdown-trigger" class="w-56 bg-[#2d2d2d] border border-gray-700 shadow-2xl rounded-md" simple>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={handleZoomFit}>Подогнать по области просмотра</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={handleZoomFitWidth}>Fit Width</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={handleZoomFitHeight}>Fit Height</DropdownItem>
+										<DropdownDivider class="bg-gray-700" />
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(0.25)}>25.0%</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(0.333)}>33.3%</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(0.5)}>50.0%</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(0.667)}>66.7%</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(1.0)}>100.0%</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(2.0)}>200.0%</DropdownItem>
+										<DropdownItem class="text-gray-200 hover:bg-primary-600 hover:text-white text-xs py-2" onclick={() => handleZoomChange(3.0)}>300.0%</DropdownItem>
+									</Dropdown>
+								</div>
+								<div class="flex items-center gap-2">
+									<input
+										type="range"
+										min="0.12"
+										max="3.0"
+										step="0.01"
+										value={currentZoom}
+										oninput={(e) => handleZoomChange(Number((e.currentTarget as HTMLInputElement).value))}
+										class="zoom-range h-1.5 flex-1 cursor-pointer appearance-none rounded-lg bg-gray-800"
+									/>
+								</div>
+							</div>
+							<div class="pt-4">
+								<div class="mb-2 text-gray-500">Интерполяция (вид)</div>
+								<Select
+									value={zoomInterpolation}
+									onchange={(e) => handleZoomInterpolationChange((e.currentTarget as HTMLSelectElement).value as InterpolationMethod)}
+									items={[
+										{ value: 'nearest', name: 'Ближайший сосед' },
+										{ value: 'bilinear', name: 'Билинейная' }
+									]}
+									size="sm"
+									class="bg-gray-800 text-white border-gray-700 text-xs"
+								/>
 							</div>
 						</div>
 					{/if}
@@ -455,17 +587,18 @@
 			</aside>
 
 			<section
-				class="relative flex flex-1 items-center justify-center overflow-hidden p-8"
+				class="relative flex flex-1 items-center justify-center overflow-auto p-8 scrollbar-hide"
 				id="workspace-bg"
+				onwheel={handleWheel}
 			>
 				<canvas
 					bind:this={mainCanvas}
 					onclick={onCanvasClick}
-					class="max-h-full max-w-full shadow-2xl ring-1 ring-gray-800 transition-transform {activeTool ===
+					class="shadow-2xl ring-1 ring-gray-800 transition-transform {activeTool ===
 					'pipette'
 						? 'cursor-crosshair'
 						: 'cursor-default'}"
-					style="object-fit: contain; background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 20px 20px;"
+					style="background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 20px 20px;"
 				></canvas>
 			</section>
 
@@ -649,7 +782,14 @@
 		}}
 	/>
 
-	{#if levelsDialogOpen}
+	<ScaleDialog
+		bind:open={scaleDialogOpen}
+		{document}
+		onApply={onScaleApply}
+		onClose={() => {}}
+	/>
+
+	{#if levelsDialogOpen || scaleDialogOpen}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
@@ -660,3 +800,25 @@
 		></div>
 	{/if}
 </div>
+
+<style>
+	@reference "./layout.css";
+
+	.scrollbar-hide::-webkit-scrollbar {
+		display: none;
+	}
+	.scrollbar-hide {
+		-ms-overflow-style: none;
+		scrollbar-width: none;
+	}
+
+	.zoom-range {
+		@apply h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-gray-800;
+	}
+	.zoom-range::-webkit-slider-thumb {
+		@apply h-4 w-4 appearance-none rounded-full border-2 border-gray-900 bg-gray-500 shadow-lg hover:bg-gray-400;
+	}
+	.zoom-range::-moz-range-thumb {
+		@apply h-4 w-4 appearance-none rounded-full border-2 border-gray-900 bg-gray-500 shadow-lg hover:bg-gray-400;
+	}
+</style>

@@ -1,4 +1,5 @@
 import { ImageDocument } from '../image';
+import { ImageTransformer, type InterpolationMethod } from '../image/transform';
 
 export type Channel = 'r' | 'g' | 'b' | 'a' | 'gray';
 
@@ -7,7 +8,8 @@ export class CanvasManager {
 	private ctx: CanvasRenderingContext2D;
 
 	private document: ImageDocument | null = null;
-	private renderData: ImageData | null = null;
+	private zoom: number = 1.0;
+	private interpolationMethod: InterpolationMethod = 'bilinear';
 
 	private activeChannels: Record<Channel, boolean> = {
 		r: true,
@@ -31,13 +33,22 @@ export class CanvasManager {
 		this.ctx = ctx;
 	}
 
+	public setZoom(zoom: number): void {
+		this.zoom = zoom;
+		this.updateRender();
+	}
+
+	public getZoom(): number {
+		return this.zoom;
+	}
+
+	public setInterpolationMethod(method: InterpolationMethod): void {
+		this.interpolationMethod = method;
+		this.updateRender();
+	}
+
 	public loadDocument(doc: ImageDocument): void {
 		this.document = doc;
-		this.canvas.width = doc.meta.width;
-		this.canvas.height = doc.meta.height;
-
-		this.renderData = new ImageData(doc.meta.width, doc.meta.height);
-
 		this.activeChannels = { r: true, g: true, b: true, a: true, gray: true };
 		this.updateRender();
 	}
@@ -96,10 +107,14 @@ export class CanvasManager {
 	}
 
 	public updateRender(): void {
-		if (!this.document || !this.renderData) return;
+		if (!this.document) return;
 
-		const originalData = this.document.getImageRGBA().data;
-		const renderData = this.renderData.data;
+		const originalData = this.document.getImageRGBA();
+		const meta = this.document.meta;
+
+		const processedData = new ImageData(meta.width, meta.height);
+		const src = originalData.data;
+		const dst = processedData.data;
 
 		const isOnlyAlpha =
 			this.activeChannels.a &&
@@ -107,11 +122,11 @@ export class CanvasManager {
 			!this.activeChannels.g &&
 			!this.activeChannels.b;
 
-		for (let i = 0; i < originalData.length; i += 4) {
-			let r = originalData[i];
-			let g = originalData[i + 1];
-			let b = originalData[i + 2];
-			let a = originalData[i + 3];
+		for (let i = 0; i < src.length; i += 4) {
+			let r = src[i];
+			let g = src[i + 1];
+			let b = src[i + 2];
+			let a = src[i + 3];
 
 			if (this.filterLUTs) {
 				r = this.filterLUTs.r[r];
@@ -121,34 +136,47 @@ export class CanvasManager {
 			}
 
 			if (isOnlyAlpha) {
-				renderData[i] = a;
-				renderData[i + 1] = a;
-				renderData[i + 2] = a;
-				renderData[i + 3] = 255;
+				dst[i] = a;
+				dst[i + 1] = a;
+				dst[i + 2] = a;
+				dst[i + 3] = 255;
 				continue;
 			}
 
-			renderData[i] = this.activeChannels.r ? r : 0;
-			renderData[i + 1] = this.activeChannels.g ? g : 0;
-			renderData[i + 2] = this.activeChannels.b ? b : 0;
-
-			renderData[i + 3] = this.activeChannels.a ? a : 255;
+			dst[i] = this.activeChannels.r ? r : 0;
+			dst[i + 1] = this.activeChannels.g ? g : 0;
+			dst[i + 2] = this.activeChannels.b ? b : 0;
+			dst[i + 3] = this.activeChannels.a ? a : 255;
 		}
 
-		this.ctx.putImageData(this.renderData, 0, 0);
+		const targetWidth = Math.max(1, Math.round(meta.width * this.zoom));
+		const targetHeight = Math.max(1, Math.round(meta.height * this.zoom));
+
+		const scaledData = ImageTransformer.resize(processedData, {
+			width: targetWidth,
+			height: targetHeight,
+			method: this.interpolationMethod
+		});
+
+		this.canvas.width = targetWidth;
+		this.canvas.height = targetHeight;
+		this.ctx.putImageData(scaledData, 0, 0);
 	}
 
 	public getCoordinatesFromMouseEvent(e: MouseEvent): { x: number; y: number } | null {
 		if (!this.document) return null;
 
 		const rect = this.canvas.getBoundingClientRect();
-		const scaleX = this.canvas.width / rect.width;
-		const scaleY = this.canvas.height / rect.height;
+		
+		// map viewport coordinates back to original image coordinates
+		// rect.width / targetWidth is the ratio between CSS pixels and Canvas pixels
+		// but targetWidth = meta.width * zoom
+		// so total scale = (rect.width / (meta.width * zoom)) * zoom = rect.width / meta.width
+		
+		const x = Math.floor((e.clientX - rect.left) * (this.document.meta.width / rect.width));
+		const y = Math.floor((e.clientY - rect.top) * (this.document.meta.height / rect.height));
 
-		const x = Math.floor((e.clientX - rect.left) * scaleX);
-		const y = Math.floor((e.clientY - rect.top) * scaleY);
-
-		if (x < 0 || y < 0 || x >= this.canvas.width || y >= this.canvas.height) {
+		if (x < 0 || y < 0 || x >= this.document.meta.width || y >= this.document.meta.height) {
 			return null;
 		}
 
