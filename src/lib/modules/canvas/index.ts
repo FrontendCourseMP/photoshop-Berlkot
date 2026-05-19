@@ -3,6 +3,13 @@ import { ImageTransformer, type InterpolationMethod } from '../image/transform';
 
 export type Channel = 'r' | 'g' | 'b' | 'a' | 'gray';
 
+export interface ViewportRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
 export class CanvasManager {
 	private canvas: HTMLCanvasElement;
 	private ctx: CanvasRenderingContext2D;
@@ -10,6 +17,7 @@ export class CanvasManager {
 	private document: ImageDocument | null = null;
 	private zoom: number = 1.0;
 	private interpolationMethod: InterpolationMethod = 'bilinear';
+	private viewport: ViewportRect | null = null;
 
 	private activeChannels: Record<Channel, boolean> = {
 		r: true,
@@ -47,9 +55,13 @@ export class CanvasManager {
 		this.updateRender();
 	}
 
+	public setViewport(rect: ViewportRect): void {
+		this.viewport = rect;
+		this.updateRender();
+	}
+
 	public loadDocument(doc: ImageDocument): void {
 		this.document = doc;
-		this.activeChannels = { r: true, g: true, b: true, a: true, gray: true };
 		this.updateRender();
 	}
 
@@ -84,7 +96,6 @@ export class CanvasManager {
 				);
 			}
 
-			// display as grayscale
 			dest[i] = val;
 			dest[i + 1] = val;
 			dest[i + 2] = val;
@@ -106,14 +117,61 @@ export class CanvasManager {
 		this.updateRender();
 	}
 
+	private previewImageData: ImageData | null = null;
+	public setPreviewImageData(data: ImageData | null): void {
+		this.previewImageData = data;
+		this.updateRender();
+	}
+
 	public updateRender(): void {
 		if (!this.document) return;
 
-		const originalData = this.document.getImageRGBA();
 		const meta = this.document.meta;
+		const fullTargetWidth = Math.max(1, Math.round(meta.width * this.zoom));
+		const fullTargetHeight = Math.max(1, Math.round(meta.height * this.zoom));
 
-		const processedData = new ImageData(meta.width, meta.height);
-		const src = originalData.data;
+		if (this.canvas.width !== fullTargetWidth || this.canvas.height !== fullTargetHeight) {
+			this.canvas.width = fullTargetWidth;
+			this.canvas.height = fullTargetHeight;
+		}
+
+		const v = this.viewport || { x: 0, y: 0, width: fullTargetWidth, height: fullTargetHeight };
+		const buffer = 2; 
+		const renderX = Math.max(0, Math.floor(v.x) - buffer);
+		const renderY = Math.max(0, Math.floor(v.y) - buffer);
+		const renderWidth = Math.min(fullTargetWidth - renderX, Math.ceil(v.width) + buffer * 2);
+		const renderHeight = Math.min(fullTargetHeight - renderY, Math.ceil(v.height) + buffer * 2);
+
+		if (renderWidth <= 0 || renderHeight <= 0) return;
+
+		let sourceData: Uint8ClampedArray;
+		let sourceWidth: number;
+		let sourceHeight: number;
+
+		if (this.previewImageData) {
+			sourceData = this.previewImageData.data;
+			sourceWidth = this.previewImageData.width;
+			sourceHeight = this.previewImageData.height;
+		} else {
+			sourceData = this.document.getImageRGBA().data;
+			sourceWidth = meta.width;
+			sourceHeight = meta.height;
+		}
+
+		const xRatio = (sourceWidth - 1) / (fullTargetWidth - 1 || 1);
+		const yRatio = (sourceHeight - 1) / (fullTargetHeight - 1 || 1);
+
+		const srcX1 = Math.floor(renderX * xRatio);
+		const srcY1 = Math.floor(renderY * yRatio);
+		const srcX2 = Math.min(sourceWidth - 1, Math.ceil((renderX + renderWidth) * xRatio) + 1);
+		const srcY2 = Math.min(sourceHeight - 1, Math.ceil((renderY + renderHeight) * yRatio) + 1);
+
+		const srcRegionWidth = (srcX2 - srcX1) + 1;
+		const srcRegionHeight = (srcY2 - srcY1) + 1;
+
+		if (srcRegionWidth <= 0 || srcRegionHeight <= 0) return;
+
+		const processedData = new ImageData(srcRegionWidth, srcRegionHeight);
 		const dst = processedData.data;
 
 		const isOnlyAlpha =
@@ -122,64 +180,70 @@ export class CanvasManager {
 			!this.activeChannels.g &&
 			!this.activeChannels.b;
 
-		for (let i = 0; i < src.length; i += 4) {
-			let r = src[i];
-			let g = src[i + 1];
-			let b = src[i + 2];
-			let a = src[i + 3];
+		for (let y = 0; y < srcRegionHeight; y++) {
+			const sy = srcY1 + y;
+			const srcRowOffset = sy * sourceWidth;
+			const dstRowOffset = y * srcRegionWidth;
 
-			if (this.filterLUTs) {
-				r = this.filterLUTs.r[r];
-				g = this.filterLUTs.g[g];
-				b = this.filterLUTs.b[b];
-				a = this.filterLUTs.a[a];
+			for (let x = 0; x < srcRegionWidth; x++) {
+				const sx = srcX1 + x;
+				const srcIdx = (srcRowOffset + sx) * 4;
+				const dstIdx = (dstRowOffset + x) * 4;
+
+				let r = sourceData[srcIdx];
+				let g = sourceData[srcIdx + 1];
+				let b = sourceData[srcIdx + 2];
+				let a = sourceData[srcIdx + 3];
+
+				if (this.filterLUTs && !this.previewImageData) {
+					r = this.filterLUTs.r[r];
+					g = this.filterLUTs.g[g];
+					b = this.filterLUTs.b[b];
+					a = this.filterLUTs.a[a];
+				}
+
+				if (isOnlyAlpha) {
+					dst[dstIdx] = a;
+					dst[dstIdx + 1] = a;
+					dst[dstIdx + 2] = a;
+					dst[dstIdx + 3] = 255;
+					continue;
+				}
+
+				dst[dstIdx] = this.activeChannels.r ? r : 0;
+				dst[dstIdx + 1] = this.activeChannels.g ? g : 0;
+				dst[dstIdx + 2] = this.activeChannels.b ? b : 0;
+				dst[dstIdx + 3] = this.activeChannels.a ? a : 255;
 			}
-
-			if (isOnlyAlpha) {
-				dst[i] = a;
-				dst[i + 1] = a;
-				dst[i + 2] = a;
-				dst[i + 3] = 255;
-				continue;
-			}
-
-			dst[i] = this.activeChannels.r ? r : 0;
-			dst[i + 1] = this.activeChannels.g ? g : 0;
-			dst[i + 2] = this.activeChannels.b ? b : 0;
-			dst[i + 3] = this.activeChannels.a ? a : 255;
 		}
 
-		const targetWidth = Math.max(1, Math.round(meta.width * this.zoom));
-		const targetHeight = Math.max(1, Math.round(meta.height * this.zoom));
-
-		const scaledData = ImageTransformer.resize(processedData, {
-			width: targetWidth,
-			height: targetHeight,
-			method: this.interpolationMethod
+		const scaledData = ImageTransformer.resizeRegion({
+			method: this.interpolationMethod,
+			source: processedData,
+			sourceOffsetX: srcX1,
+			sourceOffsetY: srcY1,
+			fullSourceWidth: sourceWidth,
+			fullSourceHeight: sourceHeight,
+			targetX: renderX,
+			targetY: renderY,
+			targetWidth: renderWidth,
+			targetHeight: renderHeight,
+			fullTargetWidth: fullTargetWidth,
+			fullTargetHeight: fullTargetHeight
 		});
 
-		this.canvas.width = targetWidth;
-		this.canvas.height = targetHeight;
-		this.ctx.putImageData(scaledData, 0, 0);
+		this.ctx.putImageData(scaledData, renderX, renderY);
 	}
 
 	public getCoordinatesFromMouseEvent(e: MouseEvent): { x: number; y: number } | null {
 		if (!this.document) return null;
-
 		const rect = this.canvas.getBoundingClientRect();
-		
-		// map viewport coordinates back to original image coordinates
-		// rect.width / targetWidth is the ratio between CSS pixels and Canvas pixels
-		// but targetWidth = meta.width * zoom
-		// so total scale = (rect.width / (meta.width * zoom)) * zoom = rect.width / meta.width
-		
 		const x = Math.floor((e.clientX - rect.left) * (this.document.meta.width / rect.width));
 		const y = Math.floor((e.clientY - rect.top) * (this.document.meta.height / rect.height));
 
 		if (x < 0 || y < 0 || x >= this.document.meta.width || y >= this.document.meta.height) {
 			return null;
 		}
-
 		return { x, y };
 	}
 }

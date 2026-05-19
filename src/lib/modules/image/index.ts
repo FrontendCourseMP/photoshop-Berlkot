@@ -80,6 +80,12 @@ export class ImageDocument {
 		return this.imageData;
 	}
 
+	public setImageRGBA(imageData: ImageData): void {
+		this.imageData = imageData;
+		this.meta.width = imageData.width;
+		this.meta.height = imageData.height;
+	}
+
 	public getImageLAB(): Float32Array {
 		const pixelCount = this.imageData.width * this.imageData.height;
 

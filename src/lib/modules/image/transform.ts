@@ -6,104 +6,116 @@ export interface ResizeOptions {
 	method: InterpolationMethod;
 }
 
+export interface RegionResizeOptions {
+	method: InterpolationMethod;
+	source: ImageData;
+	sourceOffsetX: number;
+	sourceOffsetY: number;
+	fullSourceWidth: number;
+	fullSourceHeight: number;
+	targetX: number;
+	targetY: number;
+	targetWidth: number;
+	targetHeight: number;
+	fullTargetWidth: number;
+	fullTargetHeight: number;
+}
+
 export class ImageTransformer {
 	public static resize(source: ImageData, options: ResizeOptions): ImageData {
-		const { width: targetWidth, height: targetHeight, method } = options;
+		const { width, height, method } = options;
+		return this.resizeRegion({
+			method,
+			source,
+			sourceOffsetX: 0,
+			sourceOffsetY: 0,
+			fullSourceWidth: source.width,
+			fullSourceHeight: source.height,
+			targetX: 0,
+			targetY: 0,
+			targetWidth: width,
+			targetHeight: height,
+			fullTargetWidth: width,
+			fullTargetHeight: height
+		});
+	}
+
+	public static resizeRegion(options: RegionResizeOptions): ImageData {
+		const { targetWidth, targetHeight, method } = options;
 		const targetData = new ImageData(targetWidth, targetHeight);
 
 		if (method === 'nearest') {
-			this.nearestNeighbor(source, targetData);
+			this.nearestNeighborRegion(targetData, options);
 		} else {
-			this.bilinear(source, targetData);
+			this.bilinearRegion(targetData, options);
 		}
 
 		return targetData;
 	}
 
-	private static nearestNeighbor(source: ImageData, target: ImageData): void {
-		const sw = source.width;
-		const sh = source.height;
+	private static nearestNeighborRegion(target: ImageData, opt: RegionResizeOptions): void {
+		const sw = opt.source.width;
+		const sh = opt.source.height;
 		const tw = target.width;
 		const th = target.height;
 
-		const xRatio = sw / tw;
-		const yRatio = sh / th;
+		const xRatio = opt.fullSourceWidth / opt.fullTargetWidth;
+		const yRatio = opt.fullSourceHeight / opt.fullTargetHeight;
 
-		const xSrc = new Int32Array(tw);
-		for (let x = 0; x < tw; x++) {
-			xSrc[x] = Math.floor(x * xRatio);
-		}
-
-		const ySrc = new Int32Array(th);
-		for (let y = 0; y < th; y++) {
-			ySrc[y] = Math.floor(y * yRatio);
-		}
-
-		const srcData32 = new Uint32Array(source.data.buffer, source.data.byteOffset, source.data.byteLength / 4);
+		const srcData32 = new Uint32Array(opt.source.data.buffer, opt.source.data.byteOffset, opt.source.data.byteLength / 4);
 		const dstData32 = new Uint32Array(target.data.buffer, target.data.byteOffset, target.data.byteLength / 4);
 
 		for (let y = 0; y < th; y++) {
-			const rowOffset = ySrc[y] * sw;
+			const srcY = Math.floor((y + opt.targetY) * yRatio) - opt.sourceOffsetY;
+			const clampedY = Math.max(0, Math.min(sh - 1, srcY));
+			const rowOffset = clampedY * sw;
 			const dstRowOffset = y * tw;
+
 			for (let x = 0; x < tw; x++) {
-				dstData32[dstRowOffset + x] = srcData32[rowOffset + xSrc[x]];
+				const srcX = Math.floor((x + opt.targetX) * xRatio) - opt.sourceOffsetX;
+				const clampedX = Math.max(0, Math.min(sw - 1, srcX));
+				dstData32[dstRowOffset + x] = srcData32[rowOffset + clampedX];
 			}
 		}
 	}
 
-	private static bilinear(source: ImageData, target: ImageData): void {
-		const sw = source.width;
-		const sh = source.height;
+	private static bilinearRegion(target: ImageData, opt: RegionResizeOptions): void {
+		const sw = opt.source.width;
+		const sh = opt.source.height;
 		const tw = target.width;
 		const th = target.height;
-		const srcData = source.data;
+		const srcData = opt.source.data;
 		const dstData = target.data;
 
-		const xRatio = (sw - 1) / tw;
-		const yRatio = (sh - 1) / th;
-
-		const xL = new Int32Array(tw);
-		const xR = new Int32Array(tw);
-		const xWeightInt = new Int32Array(tw);
-
-		for (let x = 0; x < tw; x++) {
-			const srcX = x * xRatio;
-			xL[x] = Math.floor(srcX);
-			xR[x] = Math.min(sw - 1, xL[x] + 1);
-			xWeightInt[x] = Math.round((srcX - xL[x]) * 256);
-		}
-
-		const yT = new Int32Array(th);
-		const yB = new Int32Array(th);
-		const yWeightInt = new Int32Array(th);
-
-		for (let y = 0; y < th; y++) {
-			const srcY = y * yRatio;
-			yT[y] = Math.floor(srcY);
-			yB[y] = Math.min(sh - 1, yT[y] + 1);
-			yWeightInt[y] = Math.round((srcY - yT[y]) * 256);
-		}
+		const xRatio = (opt.fullSourceWidth - 1) / (opt.fullTargetWidth - 1 || 1);
+		const yRatio = (opt.fullSourceHeight - 1) / (opt.fullTargetHeight - 1 || 1);
 
 		let dstIdx = 0;
 		for (let y = 0; y < th; y++) {
-			const yt = yT[y];
-			const yb = yB[y];
-			const yw = yWeightInt[y];
+			const srcYGlobal = (y + opt.targetY) * yRatio;
+			const srcYLocal = srcYGlobal - opt.sourceOffsetY;
+			
+			const yT = Math.floor(srcYLocal);
+			const yB = Math.min(sh - 1, yT + 1);
+			const yw = Math.round((srcYLocal - yT) * 256);
 			const ywInv = 256 - yw;
 
-			const rowTopOffset = yt * sw;
-			const rowBottomOffset = yb * sw;
+			const rowTopOffset = Math.max(0, yT) * sw;
+			const rowBottomOffset = Math.max(0, yB) * sw;
 
 			for (let x = 0; x < tw; x++) {
-				const xl = xL[x];
-				const xr = xR[x];
-				const xw = xWeightInt[x];
+				const srcXGlobal = (x + opt.targetX) * xRatio;
+				const srcXLocal = srcXGlobal - opt.sourceOffsetX;
+
+				const xL = Math.floor(srcXLocal);
+				const xR = Math.min(sw - 1, xL + 1);
+				const xw = Math.round((srcXLocal - xL) * 256);
 				const xwInv = 256 - xw;
 
-				const idxTL = (rowTopOffset + xl) << 2;
-				const idxTR = (rowTopOffset + xr) << 2;
-				const idxBL = (rowBottomOffset + xl) << 2;
-				const idxBR = (rowBottomOffset + xr) << 2;
+				const idxTL = (rowTopOffset + Math.max(0, xL)) << 2;
+				const idxTR = (rowTopOffset + Math.max(0, xR)) << 2;
+				const idxBL = (rowBottomOffset + Math.max(0, xL)) << 2;
+				const idxBR = (rowBottomOffset + Math.max(0, xR)) << 2;
 
 				for (let i = 0; i < 4; i++) {
 					const top = (srcData[idxTL + i] * xwInv + srcData[idxTR + i] * xw) >> 8;

@@ -25,15 +25,18 @@
 	import { Codec } from '$lib/modules/image/codec';
 	import LevelsDialog from '$lib/components/LevelsDialog.svelte';
 	import ScaleDialog from '$lib/components/ScaleDialog.svelte';
+	import FilterDialog from '$lib/components/FilterDialog.svelte';
 
 	let document = $state<ImageDocument | null>(null);
 	let docVersion = $state(0);
 	let canvasManager = $state<CanvasManager | null>(null);
 	let mainCanvas = $state<HTMLCanvasElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	let workspaceElement = $state<HTMLElement | null>(null);
 
 	let levelsDialogOpen = $state(false);
 	let scaleDialogOpen = $state(false);
+	let filterDialogOpen = $state(false);
 
 	type Tool = 'mouse' | 'pipette';
 	let activeTool = $state<Tool>('mouse');
@@ -49,6 +52,22 @@
 
 	let currentZoom = $state(1);
 	let zoomInterpolation = $state<InterpolationMethod>('bilinear');
+
+	async function updateViewport() {
+		if (canvasManager && workspaceElement && mainCanvas) {
+			const vRect = workspaceElement.getBoundingClientRect();
+			const cRect = mainCanvas.getBoundingClientRect();
+			
+			const scale = mainCanvas.width / cRect.width;
+			
+			canvasManager.setViewport({
+				x: Math.max(0, vRect.left - cRect.left) * scale,
+				y: Math.max(0, vRect.top - cRect.top) * scale,
+				width: vRect.width * scale,
+				height: vRect.height * scale
+			});
+		}
+	}
 
 	let activeChannels = $state<Record<Channel, boolean>>({
 		r: true,
@@ -111,11 +130,10 @@
 				// force redraw
 				canvasManager = new CanvasManager(mainCanvas);
 				
-				const workspace = window.document.getElementById('workspace-bg');
-				if (workspace) {
+				if (workspaceElement) {
 					const padding = 100; // 50px each side
-					const availableWidth = workspace.clientWidth - padding;
-					const availableHeight = workspace.clientHeight - padding;
+					const availableWidth = workspaceElement.clientWidth - padding;
+					const availableHeight = workspaceElement.clientHeight - padding;
 					
 					const zoomX = availableWidth / document.meta.width;
 					const zoomY = availableHeight / document.meta.height;
@@ -128,6 +146,7 @@
 				}
 				
 				canvasManager.loadDocument(document);
+				tick().then(updateViewport);
 			}
 		} catch (error) {
 			alert('Ошибка загрузки файла: ' + (error instanceof Error ? error.message : String(error)));
@@ -191,6 +210,7 @@
 		currentZoom = Math.max(0.12, Math.min(3.0, newZoom));
 		if (canvasManager) {
 			canvasManager.setZoom(currentZoom);
+			tick().then(updateViewport);
 		}
 	}
 
@@ -241,6 +261,7 @@
 			docVersion++;
 			if (canvasManager) {
 				canvasManager.loadDocument(document);
+				tick().then(updateViewport);
 			}
 		}
 	}
@@ -293,6 +314,7 @@
 	ondragleave={onWindowDragLeave}
 	ondragover={onWindowDragOver}
 	ondrop={onWindowDrop}
+	onresize={updateViewport}
 />
 
 <input
@@ -401,6 +423,13 @@
 				disabled={!document}
 				onclick={() => (scaleDialogOpen = true)}>Размер изображения</DropdownItem
 			>
+			<DropdownDivider />
+			<DropdownItem
+				class="text-gray-300 hover:bg-gray-700"
+				disabled={!document}
+				onclick={() => (filterDialogOpen = true)}>Фильтрация (Custom)</DropdownItem
+			>
+
 		</Dropdown>
 	</header>
 
@@ -589,7 +618,9 @@
 			<section
 				class="relative flex flex-1 items-center justify-center overflow-auto p-8 scrollbar-hide"
 				id="workspace-bg"
+				bind:this={workspaceElement}
 				onwheel={handleWheel}
+				onscroll={updateViewport}
 			>
 				<canvas
 					bind:this={mainCanvas}
@@ -598,7 +629,7 @@
 					'pipette'
 						? 'cursor-crosshair'
 						: 'cursor-default'}"
-					style="background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 20px 20px;"
+					style="margin: auto; background: repeating-conic-gradient(#333 0% 25%, #222 0% 50%) 50% / 20px 20px;"
 				></canvas>
 			</section>
 
@@ -789,7 +820,19 @@
 		onClose={() => {}}
 	/>
 
-	{#if levelsDialogOpen || scaleDialogOpen}
+	<FilterDialog
+		bind:open={filterDialogOpen}
+		{document}
+		{canvasManager}
+		onApply={() => {
+			if (document) {
+				docVersion++;
+			}
+		}}
+		onClose={() => {}}
+	/>
+
+	{#if levelsDialogOpen || scaleDialogOpen || filterDialogOpen}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
